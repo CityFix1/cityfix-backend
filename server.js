@@ -13,7 +13,11 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 
 // Initialize data file
 if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ complaints: [], nextId: 1 }, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ 
+        complaints: [], 
+        nextId: 1,           // Never resets unless admin does it
+        lastResetDate: new Date().toISOString()
+    }, null, 2));
 }
 
 function readData() {
@@ -24,10 +28,38 @@ function writeData(data) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-// Get all complaints (for admin dashboard only - no token check)
+// Get all complaints (for admin dashboard)
 app.get('/api/complaints', (req, res) => {
     const data = readData();
     res.json(data.complaints);
+});
+
+// Get current counter value (for admin)
+app.get('/api/counter', (req, res) => {
+    const data = readData();
+    res.json({ nextId: data.nextId });
+});
+
+// Reset counter (admin only)
+app.post('/api/reset-counter', (req, res) => {
+    const data = readData();
+    const { newStartId } = req.body;
+    
+    // Validate: must be a positive number
+    const newId = parseInt(newStartId);
+    if (isNaN(newId) || newId < 1) {
+        return res.status(400).json({ error: 'Invalid ID. Must be a positive number.' });
+    }
+    
+    data.nextId = newId;
+    data.lastResetDate = new Date().toISOString();
+    writeData(data);
+    
+    res.json({ 
+        success: true, 
+        nextId: data.nextId,
+        message: `Counter reset to CFX-${String(newId).padStart(3, '0')}`
+    });
 });
 
 // Get single complaint with PRIVATE TOKEN verification
@@ -47,7 +79,7 @@ app.get('/api/complaint/:id/:token', (req, res) => {
     res.json(complaint);
 });
 
-// Submit complaint - generates unique token
+// Submit complaint - generates unique token and sequential ID
 app.post('/api/complaints', (req, res) => {
     const data = readData();
     const nextId = data.nextId || 1;
@@ -58,7 +90,8 @@ app.post('/api/complaints', (req, res) => {
     
     const newComplaint = {
         id: `CFX-${paddedId}`,
-        privateToken: privateToken,  // Secret token for this complaint
+        complaintNumber: nextId,  // Store the numeric ID for reference
+        privateToken: privateToken,
         name: req.body.name || 'Anonymous',
         category: req.body.category,
         description: req.body.description,
@@ -71,18 +104,19 @@ app.post('/api/complaints', (req, res) => {
     };
     
     data.complaints.unshift(newComplaint);
-    data.nextId = nextId + 1;
+    data.nextId = nextId + 1;  // NEVER RESETS unless admin does it
     writeData(data);
     
     // Return BOTH id and private token to the user
     res.json({ 
         id: newComplaint.id,
+        complaintNumber: nextId,
         privateToken: privateToken,
-        message: "Save this private token to track your complaint"
+        message: "Save this to track your complaint"
     });
 });
 
-// Update status (admin only - no token check)
+// Update status (admin only)
 app.post('/api/update-status', (req, res) => {
     const { id, status } = req.body;
     const data = readData();
@@ -109,4 +143,5 @@ function calculatePriority(category, description) {
 
 app.listen(PORT, () => {
     console.log(`CityFix API running on port ${PORT}`);
+    console.log(`Next ID will be: CFX-${String(readData().nextId).padStart(3, '0')}`);
 });
