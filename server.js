@@ -15,7 +15,7 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(DATA_FILE, JSON.stringify({ 
         complaints: [], 
-        nextId: 1,           // Never resets unless admin does it
+        nextId: 1,
         lastResetDate: new Date().toISOString()
     }, null, 2));
 }
@@ -34,7 +34,7 @@ app.get('/api/complaints', (req, res) => {
     res.json(data.complaints);
 });
 
-// Get current counter value (for admin)
+// Get current counter value
 app.get('/api/counter', (req, res) => {
     const data = readData();
     res.json({ nextId: data.nextId });
@@ -45,7 +45,6 @@ app.post('/api/reset-counter', (req, res) => {
     const data = readData();
     const { newStartId } = req.body;
     
-    // Validate: must be a positive number
     const newId = parseInt(newStartId);
     if (isNaN(newId) || newId < 1) {
         return res.status(400).json({ error: 'Invalid ID. Must be a positive number.' });
@@ -62,6 +61,50 @@ app.post('/api/reset-counter', (req, res) => {
     });
 });
 
+// DELETE a single complaint (admin only)
+app.delete('/api/complaint/:id', (req, res) => {
+    const data = readData();
+    const complaintId = req.params.id;
+    const complaintIndex = data.complaints.findIndex(c => c.id === complaintId);
+    
+    if (complaintIndex === -1) {
+        return res.status(404).json({ error: 'Complaint not found' });
+    }
+    
+    const deletedComplaint = data.complaints[complaintIndex];
+    data.complaints.splice(complaintIndex, 1);
+    writeData(data);
+    
+    res.json({ 
+        success: true, 
+        message: `Complaint ${complaintId} deleted successfully`,
+        deleted: deletedComplaint
+    });
+});
+
+// DELETE all complaints (admin only)
+app.delete('/api/complaints/all', (req, res) => {
+    const data = readData();
+    const deletedCount = data.complaints.length;
+    
+    data.complaints = [];
+    writeData(data);
+    
+    res.json({ 
+        success: true, 
+        message: `All ${deletedCount} complaints deleted successfully`,
+        deletedCount: deletedCount
+    });
+});
+
+// Get complaints by device token (returns ALL complaints from this device)
+app.post('/api/my-complaints', (req, res) => {
+    const { deviceToken } = req.body;
+    const data = readData();
+    const userComplaints = data.complaints.filter(c => c.deviceToken === deviceToken);
+    res.json(userComplaints);
+});
+
 // Get single complaint with PRIVATE TOKEN verification
 app.get('/api/complaint/:id/:token', (req, res) => {
     const data = readData();
@@ -71,7 +114,6 @@ app.get('/api/complaint/:id/:token', (req, res) => {
         return res.status(404).json({ error: 'Complaint not found' });
     }
     
-    // Verify private token
     if (complaint.privateToken !== req.params.token) {
         return res.status(403).json({ error: 'Access denied. This is not your complaint.' });
     }
@@ -79,19 +121,24 @@ app.get('/api/complaint/:id/:token', (req, res) => {
     res.json(complaint);
 });
 
-// Submit complaint - generates unique token and sequential ID
+// Submit complaint
 app.post('/api/complaints', (req, res) => {
     const data = readData();
     const nextId = data.nextId || 1;
     const paddedId = String(nextId).padStart(3, '0');
     
-    // Generate unique private token (random string)
     const privateToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    
+    let deviceToken = req.body.deviceToken;
+    if (!deviceToken) {
+        deviceToken = Math.random().toString(36).substring(2, 20) + Math.random().toString(36).substring(2, 20);
+    }
     
     const newComplaint = {
         id: `CFX-${paddedId}`,
-        complaintNumber: nextId,  // Store the numeric ID for reference
+        complaintNumber: nextId,
         privateToken: privateToken,
+        deviceToken: deviceToken,
         name: req.body.name || 'Anonymous',
         category: req.body.category,
         description: req.body.description,
@@ -104,15 +151,15 @@ app.post('/api/complaints', (req, res) => {
     };
     
     data.complaints.unshift(newComplaint);
-    data.nextId = nextId + 1;  // NEVER RESETS unless admin does it
+    data.nextId = nextId + 1;
     writeData(data);
     
-    // Return BOTH id and private token to the user
     res.json({ 
         id: newComplaint.id,
         complaintNumber: nextId,
         privateToken: privateToken,
-        message: "Save this to track your complaint"
+        deviceToken: deviceToken,
+        message: "Your complaint has been submitted"
     });
 });
 
@@ -143,5 +190,4 @@ function calculatePriority(category, description) {
 
 app.listen(PORT, () => {
     console.log(`CityFix API running on port ${PORT}`);
-    console.log(`Next ID will be: CFX-${String(readData().nextId).padStart(3, '0')}`);
 });
