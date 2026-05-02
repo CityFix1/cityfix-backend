@@ -6,7 +6,13 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// CORS configuration - Allow all origins
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'DELETE', 'PUT', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json({ limit: '10mb' }));
 
 const DATA_FILE = path.join(__dirname, 'data.json');
@@ -97,7 +103,7 @@ app.delete('/api/complaints/all', (req, res) => {
     });
 });
 
-// Get complaints by device token (returns ALL complaints from this device)
+// Get complaints by device token
 app.post('/api/my-complaints', (req, res) => {
     const { deviceToken } = req.body;
     const data = readData();
