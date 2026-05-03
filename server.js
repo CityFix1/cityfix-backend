@@ -6,7 +6,6 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS configuration - Allow all origins
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'DELETE', 'PUT', 'OPTIONS'],
@@ -21,7 +20,7 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(DATA_FILE, JSON.stringify({ 
         complaints: [], 
-        nextId: 1,
+        nextId: 1,           // NEVER auto-resets. Only admin changes.
         lastResetDate: new Date().toISOString()
     }, null, 2));
 }
@@ -34,7 +33,7 @@ function writeData(data) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-// Get all complaints (for admin dashboard)
+// Get all complaints
 app.get('/api/complaints', (req, res) => {
     const data = readData();
     res.json(data.complaints);
@@ -46,7 +45,7 @@ app.get('/api/counter', (req, res) => {
     res.json({ nextId: data.nextId });
 });
 
-// Reset counter (admin only)
+// Reset counter (ADMIN ONLY - never happens automatically)
 app.post('/api/reset-counter', (req, res) => {
     const data = readData();
     const { newStartId } = req.body;
@@ -67,7 +66,7 @@ app.post('/api/reset-counter', (req, res) => {
     });
 });
 
-// DELETE a single complaint (admin only)
+// DELETE a single complaint
 app.delete('/api/complaint/:id', (req, res) => {
     const data = readData();
     const complaintId = req.params.id;
@@ -77,30 +76,18 @@ app.delete('/api/complaint/:id', (req, res) => {
         return res.status(404).json({ error: 'Complaint not found' });
     }
     
-    const deletedComplaint = data.complaints[complaintIndex];
     data.complaints.splice(complaintIndex, 1);
     writeData(data);
     
-    res.json({ 
-        success: true, 
-        message: `Complaint ${complaintId} deleted successfully`,
-        deleted: deletedComplaint
-    });
+    res.json({ success: true, message: `Complaint ${complaintId} deleted` });
 });
 
-// DELETE all complaints (admin only)
+// DELETE all complaints
 app.delete('/api/complaints/all', (req, res) => {
     const data = readData();
-    const deletedCount = data.complaints.length;
-    
     data.complaints = [];
     writeData(data);
-    
-    res.json({ 
-        success: true, 
-        message: `All ${deletedCount} complaints deleted successfully`,
-        deletedCount: deletedCount
-    });
+    res.json({ success: true, message: 'All complaints deleted' });
 });
 
 // Get complaints by device token
@@ -111,7 +98,7 @@ app.post('/api/my-complaints', (req, res) => {
     res.json(userComplaints);
 });
 
-// Get single complaint with PRIVATE TOKEN verification
+// Get single complaint with private token
 app.get('/api/complaint/:id/:token', (req, res) => {
     const data = readData();
     const complaint = data.complaints.find(c => c.id === req.params.id);
@@ -121,13 +108,13 @@ app.get('/api/complaint/:id/:token', (req, res) => {
     }
     
     if (complaint.privateToken !== req.params.token) {
-        return res.status(403).json({ error: 'Access denied. This is not your complaint.' });
+        return res.status(403).json({ error: 'Access denied' });
     }
     
     res.json(complaint);
 });
 
-// Submit complaint
+// Submit complaint - IDs NEVER repeat
 app.post('/api/complaints', (req, res) => {
     const data = readData();
     const nextId = data.nextId || 1;
@@ -157,19 +144,18 @@ app.post('/api/complaints', (req, res) => {
     };
     
     data.complaints.unshift(newComplaint);
-    data.nextId = nextId + 1;
+    data.nextId = nextId + 1;  // ← ONLY increments, NEVER resets automatically
     writeData(data);
     
     res.json({ 
         id: newComplaint.id,
         complaintNumber: nextId,
         privateToken: privateToken,
-        deviceToken: deviceToken,
-        message: "Your complaint has been submitted"
+        deviceToken: deviceToken
     });
 });
 
-// Update status (admin only)
+// Update status
 app.post('/api/update-status', (req, res) => {
     const { id, status } = req.body;
     const data = readData();
@@ -196,4 +182,6 @@ function calculatePriority(category, description) {
 
 app.listen(PORT, () => {
     console.log(`CityFix API running on port ${PORT}`);
+    const data = readData();
+    console.log(`Next ID will be: CFX-${String(data.nextId).padStart(3, '0')}`);
 });
