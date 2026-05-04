@@ -14,13 +14,22 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 
-const DATA_FILE = path.join(__dirname, 'data.json');
+// ========== IMPORTANT CHANGE ==========
+// Data now saves to PERSISTENT DISK location
+const DATA_FILE = path.join('/data', 'data.json');
+// =======================================
+
+// Create /data folder if it doesn't exist (Render does this automatically with disk attached)
+const dataDir = '/data';
+if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+}
 
 // Initialize data file
 if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(DATA_FILE, JSON.stringify({ 
         complaints: [], 
-        nextId: 1,           // NEVER auto-resets. Only admin changes.
+        nextId: 1,
         lastResetDate: new Date().toISOString()
     }, null, 2));
 }
@@ -45,7 +54,7 @@ app.get('/api/counter', (req, res) => {
     res.json({ nextId: data.nextId });
 });
 
-// Reset counter (ADMIN ONLY - never happens automatically)
+// Reset counter (ADMIN ONLY)
 app.post('/api/reset-counter', (req, res) => {
     const data = readData();
     const { newStartId } = req.body;
@@ -144,7 +153,7 @@ app.post('/api/complaints', (req, res) => {
     };
     
     data.complaints.unshift(newComplaint);
-    data.nextId = nextId + 1;  // ← ONLY increments, NEVER resets automatically
+    data.nextId = nextId + 1;
     writeData(data);
     
     res.json({ 
@@ -183,5 +192,6 @@ function calculatePriority(category, description) {
 app.listen(PORT, () => {
     console.log(`CityFix API running on port ${PORT}`);
     const data = readData();
+    console.log(`Data saved to persistent disk at: ${DATA_FILE}`);
     console.log(`Next ID will be: CFX-${String(data.nextId).padStart(3, '0')}`);
 });
