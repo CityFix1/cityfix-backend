@@ -136,7 +136,12 @@ app.post('/api/complaints', (req, res) => {
     data.complaints.unshift(newComplaint);
     data.nextId = nextId + 1;
     writeData(data);
-    res.json({ id: newComplaint.id, complaintNumber: nextId, privateToken: privateToken, deviceToken: deviceToken });
+    res.json({ 
+        id: newComplaint.id, 
+        complaintNumber: nextId, 
+        privateToken: privateToken, 
+        deviceToken: deviceToken 
+    });
 });
 
 app.post('/api/update-status', (req, res) => {
