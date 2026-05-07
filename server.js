@@ -14,22 +14,33 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 
+// Use the exact same path as before
 const DATA_FILE = path.join(__dirname, 'data.json');
 
+console.log(`Looking for data.json at: ${DATA_FILE}`);
+
+// Check if file exists
 if (!fs.existsSync(DATA_FILE)) {
+    console.log('data.json not found, creating new one');
     fs.writeFileSync(DATA_FILE, JSON.stringify({ 
         complaints: [], 
         nextId: 1,
         lastResetDate: new Date().toISOString()
     }, null, 2));
+} else {
+    console.log('data.json found! Loading existing complaints...');
 }
 
 function readData() {
-    return JSON.parse(fs.readFileSync(DATA_FILE));
+    const raw = fs.readFileSync(DATA_FILE);
+    const data = JSON.parse(raw);
+    console.log(`Loaded ${data.complaints.length} complaints`);
+    return data;
 }
 
 function writeData(data) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    console.log(`Saved ${data.complaints.length} complaints`);
 }
 
 // Get all complaints
@@ -159,5 +170,6 @@ function calculatePriority(category, description) {
 app.listen(PORT, () => {
     console.log(`CityFix API running on port ${PORT}`);
     const data = readData();
+    console.log(`Total complaints in database: ${data.complaints.length}`);
     console.log(`Next ID will be: CFX-${String(data.nextId).padStart(3, '0')}`);
 });
