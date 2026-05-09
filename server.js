@@ -6,41 +6,22 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'DELETE', 'PUT', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
+app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Use the exact same path as before
 const DATA_FILE = path.join(__dirname, 'data.json');
 
-console.log(`Looking for data.json at: ${DATA_FILE}`);
-
-// Check if file exists
+// Initialize data file if not exists
 if (!fs.existsSync(DATA_FILE)) {
-    console.log('data.json not found, creating new one');
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ 
-        complaints: [], 
-        nextId: 1,
-        lastResetDate: new Date().toISOString()
-    }, null, 2));
-} else {
-    console.log('data.json found! Loading existing complaints...');
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ complaints: [], nextId: 1, lastResetDate: new Date().toISOString() }, null, 2));
 }
 
 function readData() {
-    const raw = fs.readFileSync(DATA_FILE);
-    const data = JSON.parse(raw);
-    console.log(`Loaded ${data.complaints.length} complaints`);
-    return data;
+    return JSON.parse(fs.readFileSync(DATA_FILE));
 }
 
 function writeData(data) {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-    console.log(`Saved ${data.complaints.length} complaints`);
 }
 
 // Get all complaints
@@ -49,78 +30,36 @@ app.get('/api/complaints', (req, res) => {
     res.json(data.complaints);
 });
 
-app.get('/api/counter', (req, res) => {
-    const data = readData();
-    res.json({ nextId: data.nextId });
-});
-
-app.post('/api/reset-counter', (req, res) => {
-    const data = readData();
-    const { newStartId } = req.body;
-    const newId = parseInt(newStartId);
-    if (isNaN(newId) || newId < 1) {
-        return res.status(400).json({ error: 'Invalid ID. Must be a positive number.' });
-    }
-    data.nextId = newId;
-    data.lastResetDate = new Date().toISOString();
-    writeData(data);
-    res.json({ success: true, nextId: data.nextId, message: `Counter reset to CFX-${String(newId).padStart(3, '0')}` });
-});
-
-app.delete('/api/complaint/:id', (req, res) => {
-    const data = readData();
-    const complaintId = req.params.id;
-    const complaintIndex = data.complaints.findIndex(c => c.id === complaintId);
-    if (complaintIndex === -1) {
-        return res.status(404).json({ error: 'Complaint not found' });
-    }
-    data.complaints.splice(complaintIndex, 1);
-    writeData(data);
-    res.json({ success: true, message: `Complaint ${complaintId} deleted` });
-});
-
-app.delete('/api/complaints/all', (req, res) => {
-    const data = readData();
-    data.complaints = [];
-    writeData(data);
-    res.json({ success: true, message: 'All complaints deleted' });
-});
-
-app.post('/api/my-complaints', (req, res) => {
-    const { deviceToken } = req.body;
-    const data = readData();
-    const userComplaints = data.complaints.filter(c => c.deviceToken === deviceToken);
-    res.json(userComplaints);
-});
-
+// Get single complaint
 app.get('/api/complaint/:id/:token', (req, res) => {
     const data = readData();
     const complaint = data.complaints.find(c => c.id === req.params.id);
-    if (!complaint) {
-        return res.status(404).json({ error: 'Complaint not found' });
-    }
-    if (complaint.privateToken !== req.params.token) {
-        return res.status(403).json({ error: 'Access denied' });
-    }
+    if (!complaint) return res.status(404).json({ error: 'Not found' });
+    if (complaint.privateToken !== req.params.token) return res.status(403).json({ error: 'Access denied' });
     res.json(complaint);
 });
 
-// Submit complaint with phone number
+// Get complaints by device token
+app.post('/api/my-complaints', (req, res) => {
+    const { deviceToken } = req.body;
+    const data = readData();
+    res.json(data.complaints.filter(c => c.deviceToken === deviceToken));
+});
+
+// Submit complaint
 app.post('/api/complaints', (req, res) => {
     const data = readData();
     const nextId = data.nextId || 1;
     const paddedId = String(nextId).padStart(3, '0');
     const privateToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     let deviceToken = req.body.deviceToken;
-    if (!deviceToken) {
-        deviceToken = Math.random().toString(36).substring(2, 20) + Math.random().toString(36).substring(2, 20);
-    }
-    
+    if (!deviceToken) deviceToken = Math.random().toString(36).substring(2, 20) + Math.random().toString(36).substring(2, 20);
+
     const newComplaint = {
         id: `CFX-${paddedId}`,
         complaintNumber: nextId,
-        privateToken: privateToken,
-        deviceToken: deviceToken,
+        privateToken,
+        deviceToken,
         name: req.body.name || 'Anonymous',
         phone: req.body.phone || '',
         category: req.body.category,
@@ -132,18 +71,14 @@ app.post('/api/complaints', (req, res) => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
-    
+
     data.complaints.unshift(newComplaint);
     data.nextId = nextId + 1;
     writeData(data);
-    res.json({ 
-        id: newComplaint.id, 
-        complaintNumber: nextId, 
-        privateToken: privateToken, 
-        deviceToken: deviceToken 
-    });
+    res.json({ id: newComplaint.id, privateToken });
 });
 
+// Update status
 app.post('/api/update-status', (req, res) => {
     const { id, status } = req.body;
     const data = readData();
@@ -152,10 +87,45 @@ app.post('/api/update-status', (req, res) => {
         complaint.status = status;
         complaint.updatedAt = new Date().toISOString();
         writeData(data);
-        res.json({ success: true, complaint });
+        res.json({ success: true });
     } else {
         res.status(404).json({ error: 'Not found' });
     }
+});
+
+// Reset counter
+app.get('/api/counter', (req, res) => {
+    const data = readData();
+    res.json({ nextId: data.nextId });
+});
+
+app.post('/api/reset-counter', (req, res) => {
+    const data = readData();
+    const { newStartId } = req.body;
+    const newId = parseInt(newStartId);
+    if (isNaN(newId) || newId < 1) return res.status(400).json({ error: 'Invalid ID' });
+    data.nextId = newId;
+    data.lastResetDate = new Date().toISOString();
+    writeData(data);
+    res.json({ success: true, nextId: data.nextId });
+});
+
+// Delete single complaint
+app.delete('/api/complaint/:id', (req, res) => {
+    const data = readData();
+    const index = data.complaints.findIndex(c => c.id === req.params.id);
+    if (index === -1) return res.status(404).json({ error: 'Not found' });
+    data.complaints.splice(index, 1);
+    writeData(data);
+    res.json({ success: true });
+});
+
+// Delete all complaints
+app.delete('/api/complaints/all', (req, res) => {
+    const data = readData();
+    data.complaints = [];
+    writeData(data);
+    res.json({ success: true });
 });
 
 function calculatePriority(category, description) {
@@ -169,7 +139,4 @@ function calculatePriority(category, description) {
 
 app.listen(PORT, () => {
     console.log(`CityFix API running on port ${PORT}`);
-    const data = readData();
-    console.log(`Total complaints in database: ${data.complaints.length}`);
-    console.log(`Next ID will be: CFX-${String(data.nextId).padStart(3, '0')}`);
 });
